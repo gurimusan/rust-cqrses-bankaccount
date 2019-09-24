@@ -1,0 +1,19 @@
+version: "3"
+services:
+  db:
+    image: amazon/dynamodb-local
+    ports:
+      - 8000:8000
+  app:
+    build: .
+    volumes:
+      - .:/app/rust-cqrses-bankaccount
+    working_dir: /app/rust-cqrses-bankaccount
+    user: "${UID}:${GID}"
+    environment:
+      AWS_ACCESS_KEY_ID: LOCAL
+      AWS_SECRET_ACCESS_KEY: LOCAL
+      AWS_DEFAULT_REGION: ap-northeast-1
+    tty: true
+    links:
+      - db

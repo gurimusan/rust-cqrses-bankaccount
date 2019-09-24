@@ -1,0 +1,27 @@
+{
+  "TableName": "event_store",
+  "KeySchema": [
+    {
+      "AttributeName": "stream_id",
+      "KeyType": "HASH"
+    },
+    {
+      "AttributeName": "stream_version",
+      "KeyType": "RANGE"
+    }
+  ],
+  "AttributeDefinitions": [
+    {
+      "AttributeName": "stream_id",
+      "AttributeType": "S"
+    },
+    {
+      "AttributeName": "stream_version",
+      "AttributeType": "N"
+    }
+  ],
+  "ProvisionedThroughput": {
+    "ReadCapacityUnits": 1,
+    "WriteCapacityUnits": 1
+  }
+}
