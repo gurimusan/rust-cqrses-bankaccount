@@ -81,11 +81,11 @@ impl EventStore for DynamoDbEventStore {
         ];
 
         let mut values: HashMap<String, AttributeValue> = HashMap::new();
-        values.insert(String::from("stream_id"), AttributeValue {
+        values.insert(String::from(":stream_id"), AttributeValue {
             s: Some(id.stream_name().to_string()),
             ..Default::default()
         });
-        values.insert(String::from("stream_version"), AttributeValue {
+        values.insert(String::from(":stream_version"), AttributeValue {
             n: Some((id.stream_version()).to_string()),
             ..Default::default()
         });
@@ -108,7 +108,7 @@ impl EventStore for DynamoDbEventStore {
                     .collect();
                 let version = output.items.as_ref().unwrap()
                     .last().unwrap()
-                    .get("stream_version").unwrap().s.as_ref().unwrap().clone()
+                    .get("stream_version").unwrap().n.as_ref().unwrap().clone()
                     .parse().unwrap();
                 Ok(EventStream::new(events, version))
             },
