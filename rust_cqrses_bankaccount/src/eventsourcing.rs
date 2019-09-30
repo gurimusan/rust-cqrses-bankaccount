@@ -25,18 +25,22 @@ impl EventStreamId {
 }
 
 #[derive(Debug, Clone)]
-pub struct Event {
+pub struct StoredEvent {
     event_type: String,
     event_body: String,
     event_occurred_at: DateTime<Local>,
+    stream_name: String,
+    stream_version: u64,
 }
 
-impl Event {
-    pub fn new(event_type: String, event_body: String, event_occurred_at: DateTime<Local>) -> Self {
+impl StoredEvent {
+    pub fn new(event_type: String, event_body: String, event_occurred_at: DateTime<Local>, stream_name: String, stream_version: u64) -> Self {
         Self {
-            event_type: event_type,
-            event_body: event_body,
-            event_occurred_at: event_occurred_at,
+            event_type,
+            event_body,
+            event_occurred_at,
+            stream_name,
+            stream_version,
         }
     }
 
@@ -51,14 +55,23 @@ impl Event {
     pub fn event_occurred_at(&self) -> &DateTime<Local> {
         &self.event_occurred_at
     }
+
+    pub fn stream_name(&self) -> &str {
+        &self.stream_name
+    }
+
+    pub fn stream_version(&self) -> u64 {
+        self.stream_version
+    }
 }
 
-pub struct EventStream {
+#[derive(Debug, Clone)]
+pub struct EventStream<Event> {
     events: Vec<Event>,
     version: u64,
 }
 
-impl EventStream {
+impl<Event> EventStream<Event> {
     pub fn new(events: Vec<Event>, version: u64) -> Self {
         Self {
             events: events,
@@ -94,7 +107,20 @@ pub enum EventStoreError {
 }
 
 pub trait EventStore {
-    fn save(&self, id: EventStreamId, events: Vec<Event>) -> Result<(), EventStoreError>;
+    type Event;
+    type EventStream;
 
-    fn event_stream_since(&self, id: &EventStreamId) -> Result<EventStream, EventStoreError>;
+    fn save(&self, id: EventStreamId, events: Vec<Self::Event>) -> Result<(), EventStoreError>;
+
+    fn event_stream_since(&self, id: &EventStreamId) -> Result<Self::EventStream, EventStoreError>;
+}
+
+pub trait EventBus<Event> {
+    fn put(&mut self, event: &Event);
+
+    fn register(&mut self, subscriber: Box<dyn EventSubscriber<Event>>);
+}
+
+pub trait EventSubscriber<Event> {
+    fn handle(&self, event: &Event);
 }

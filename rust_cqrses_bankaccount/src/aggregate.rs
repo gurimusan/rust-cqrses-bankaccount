@@ -4,8 +4,6 @@ use uuid::Uuid;
 use failure::Fail;
 use serde::{Serialize, Deserialize};
 
-use super::eventstore::Event;
-
 #[derive(Debug, Fail)]
 pub enum BankAccountError {
     #[fail(display = "Invalid bank account id: {:?}", _0)]
@@ -14,17 +12,23 @@ pub enum BankAccountError {
     #[fail(display = "Invalid bank account name: {:?}", _0)]
     InvalidBankAccountName(String),
 
+    #[fail(display = "State is not yet opended")]
+    NotYetOpened,
+
+    #[fail(display = "State is already opended: {:?}", _0)]
+    AlreadyOpened(BankAccountId),
+
     #[fail(display = "State is already closed: {:?}", _0)]
-    AlreadyClosedStateError(BankAccountId),
+    AlreadyClosed(BankAccountId),
 
     #[fail(display = "A deposited money amount 0 is illegal: id = {:?}, money = {:?}", _0, _1)]
-    DepositZeroError(BankAccountId, i32),
+    DepositZero(BankAccountId, i32),
 
     #[fail(display = "Forbidden that deposit amount to negative: id = {:?}, money = {:?}", _0, _1)]
-    NegativeBalanceError(BankAccountId, i32),
+    NegativeBalance(BankAccountId, i32),
 
     #[fail(display = "Invalid state: {:?}", _0)]
-    InvalidStateError(BankAccountId),
+    InvalidState(BankAccountId),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -55,34 +59,24 @@ pub enum BankAccountEvent {
     },
 }
 
-impl Into<Event> for BankAccountEvent {
-    fn into(self) -> Event {
-        match &self {
-            Self::Opened{ bank_account_id: _, name: _, occurred_at } => Event::new (
-                String::from("BankAccountOpened"),
-                serde_json::to_string(&self).unwrap(),
-                occurred_at.clone(),
-            ),
-            Self::Updated{ bank_account_id: _, name: _, occurred_at } => Event::new (
-                String::from("BankAccountUpdated"),
-                serde_json::to_string(&self).unwrap(),
-                occurred_at.clone(),
-            ),
-            Self::Deposited{ bank_account_id: _, deposit: _, occurred_at } => Event::new (
-                String::from("BankAccountDeposited"),
-                serde_json::to_string(&self).unwrap(),
-                occurred_at.clone(),
-            ),
-            Self::Withdrawn{ bank_account_id: _, withdraw: _, occurred_at } => Event::new (
-                String::from("BankAccountWithdrawn"),
-                serde_json::to_string(&self).unwrap(),
-                occurred_at.clone(),
-            ),
-            Self::Closed{ bank_account_id: _, occurred_at } => Event::new (
-                String::from("BankAccountClosed"),
-                serde_json::to_string(&self).unwrap(),
-                occurred_at.clone(),
-            ),
+impl BankAccountEvent {
+    pub fn event_type(&self) -> &str {
+        match self {
+            Self::Opened {bank_account_id: _, name: _, occurred_at: _} => "BankAccountOpened",
+            Self::Updated {bank_account_id: _, name: _, occurred_at: _} => "BankAccountUpdated",
+            Self::Deposited {bank_account_id: _, deposit: _, occurred_at: _} => "BankAccountDeposited",
+            Self::Withdrawn {bank_account_id: _, withdraw: _, occurred_at: _} => "BankAccountWithdrawn",
+            Self::Closed {bank_account_id: _, occurred_at: _} => "BankAccountClosed",
+        }
+    }
+
+    pub fn occurred_at(&self) -> DateTime<Local> {
+        match self {
+            Self::Opened {bank_account_id: _, name: _, occurred_at} => occurred_at.clone(),
+            Self::Updated {bank_account_id: _, name: _, occurred_at} => occurred_at.clone(),
+            Self::Deposited {bank_account_id: _, deposit: _, occurred_at} => occurred_at.clone(),
+            Self::Withdrawn {bank_account_id: _, withdraw: _, occurred_at} => occurred_at.clone(),
+            Self::Closed {bank_account_id: _, occurred_at} => occurred_at.clone(),
         }
     }
 }
@@ -214,7 +208,7 @@ impl BankAccount {
 
     pub fn with_name(&self, name: BankAccountName, occurred_at: DateTime<Local>) -> Result<Self, BankAccountError> {
         if self.is_closed {
-            Err(BankAccountError::AlreadyClosedStateError(self.id.clone()))
+            Err(BankAccountError::AlreadyClosed(self.id.clone()))
         } else {
             Ok(Self {
                 name: name,
@@ -226,11 +220,11 @@ impl BankAccount {
 
     pub fn deposit(&self, deposit: i32, occurred_at: DateTime<Local>) -> Result<Self, BankAccountError> {
         if self.is_closed {
-            Err(BankAccountError::AlreadyClosedStateError(self.id.clone()))
+            Err(BankAccountError::AlreadyClosed(self.id.clone()))
         } else if deposit == 0 {
-            Err(BankAccountError::DepositZeroError(self.id.clone(), deposit))
+            Err(BankAccountError::DepositZero(self.id.clone(), deposit))
         } else if (self.balance + deposit) < 0 {
-            Err(BankAccountError::NegativeBalanceError(self.id.clone(), deposit))
+            Err(BankAccountError::NegativeBalance(self.id.clone(), deposit))
         } else {
             Ok(Self {
                 balance: self.balance + deposit,
@@ -242,11 +236,11 @@ impl BankAccount {
 
     pub fn withdraw(&self, withdraw: i32, occurred_at: DateTime<Local>) -> Result<Self, BankAccountError> {
         if self.is_closed {
-            Err(BankAccountError::AlreadyClosedStateError(self.id.clone()))
+            Err(BankAccountError::AlreadyClosed(self.id.clone()))
         } else if withdraw == 0 {
-            Err(BankAccountError::DepositZeroError(self.id.clone(), withdraw))
+            Err(BankAccountError::DepositZero(self.id.clone(), withdraw))
         } else if (self.balance - withdraw) < 0 {
-            Err(BankAccountError::NegativeBalanceError(self.id.clone(), withdraw))
+            Err(BankAccountError::NegativeBalance(self.id.clone(), withdraw))
         } else {
             Ok(Self {
                 balance: self.balance - withdraw,
@@ -258,7 +252,7 @@ impl BankAccount {
 
     pub fn close(&self, occurred_at: DateTime<Local>) -> Result<Self, BankAccountError> {
         if self.is_closed {
-            Err(BankAccountError::AlreadyClosedStateError(self.id.clone()))
+            Err(BankAccountError::AlreadyClosed(self.id.clone()))
         } else {
             Ok(Self {
                 is_closed: true,
@@ -273,7 +267,6 @@ impl BankAccount {
 pub struct BankAccountAggregate {
     state: Option<BankAccount>,
     version: u64,
-    events: Vec<BankAccountEvent>,
 }
 
 impl BankAccountAggregate {
@@ -281,7 +274,6 @@ impl BankAccountAggregate {
         Self {
             state: None,
             version: 0,
-            events: vec![],
         }
     }
 
@@ -289,36 +281,152 @@ impl BankAccountAggregate {
         Self {
             state: Some(bank_account),
             version: version,
-            events: vec![],
         }
     }
 
     pub fn load_from_events(events: Vec<BankAccountEvent>, version: u64) -> Result<Self, BankAccountError> {
         let mut aggregate = Self::new();
-        aggregate.set_version(version);
         for event in events {
-            match aggregate.apply_event(event) {
+            aggregate = match BankAccountAggregate::apply_event(&aggregate, event) {
                 Err(e) => return Err(e),
-                _ => continue
+                Ok(ag) => ag,
             }
         }
+        aggregate.set_version(version);
         Ok(aggregate)
     }
 
-    pub fn id(&self) -> BankAccountId {
-        self.state.as_ref().unwrap().id().clone()
+
+    pub fn handle_command(aggregate: &Self, command: BankAccountCommand) -> Result<Vec<BankAccountEvent>, BankAccountError> {
+        match command {
+            BankAccountCommand::Open{ bank_account_id, name } => {
+                match aggregate.state() {
+                    Some(_) => Err(BankAccountError::AlreadyOpened(bank_account_id)),
+                    None => {
+                        Ok(vec![
+                            BankAccountEvent::Opened {
+                                bank_account_id: bank_account_id,
+                                name: name,
+                                occurred_at: Local::now(),
+                            }
+                        ])
+                    },
+                }
+            }
+            BankAccountCommand::Update{ bank_account_id, name } => {
+                if aggregate.equals_id(&bank_account_id) {
+                    Ok(vec![
+                        BankAccountEvent::Updated {
+                            bank_account_id: bank_account_id,
+                            name: name,
+                            occurred_at: Local::now(),
+                        }
+                    ])
+                } else {
+                    Err(BankAccountError::InvalidState(bank_account_id))
+                }
+            },
+            BankAccountCommand::Deposit{ bank_account_id, deposit } => {
+                if aggregate.equals_id(&bank_account_id) {
+                    Ok(vec![
+                        BankAccountEvent::Deposited {
+                            bank_account_id: bank_account_id,
+                            deposit: deposit,
+                            occurred_at: Local::now(),
+                        }
+                    ])
+                } else {
+                    Err(BankAccountError::InvalidState(bank_account_id))
+                }
+            },
+            BankAccountCommand::Withdraw{ bank_account_id, withdraw } => {
+                if aggregate.equals_id(&bank_account_id) {
+                    Ok(vec![
+                        BankAccountEvent::Withdrawn {
+                            bank_account_id: bank_account_id,
+                            withdraw: withdraw,
+                            occurred_at: Local::now(),
+                        }
+                    ])
+                } else {
+                    Err(BankAccountError::InvalidState(bank_account_id))
+                }
+            },
+            BankAccountCommand::Close{ bank_account_id } => {
+                if aggregate.equals_id(&bank_account_id) {
+                    Ok(vec![
+                        BankAccountEvent::Closed {
+                            bank_account_id: bank_account_id,
+                            occurred_at: Local::now(),
+                        }
+                    ])
+                } else {
+                    Err(BankAccountError::InvalidState(bank_account_id))
+                }
+            },
+        }
     }
 
-    pub fn state(&self) -> Option<BankAccount> {
-        self.state.clone()
+    pub fn apply_event(aggregate: &Self, event: BankAccountEvent) -> Result<Self, BankAccountError> {
+        match event {
+            BankAccountEvent::Opened{ bank_account_id, name, occurred_at } => {
+                Ok(Self {
+                    state: Some(BankAccount::new(
+                        bank_account_id.clone(),
+                        name.clone(),
+                        false,
+                        0,
+                        occurred_at.clone(),
+                        occurred_at.clone(),
+                        )),
+                    version: 0,
+                })
+            },
+            BankAccountEvent::Updated{ bank_account_id: _, name, occurred_at } => {
+                aggregate.state().as_ref().unwrap().with_name(name.clone(), occurred_at.clone())
+                    .and_then(|new_state| {
+                        Ok(Self {
+                            state: Some(new_state),
+                            version: aggregate.version(),
+                        })
+                    })
+            },
+            BankAccountEvent::Deposited{ bank_account_id: _, deposit, occurred_at } => {
+                aggregate.state().as_ref().unwrap().deposit(deposit, occurred_at.clone())
+                    .and_then(|new_state| {
+                        Ok(Self {
+                            state: Some(new_state),
+                            version: aggregate.version(),
+                        })
+                    })
+            },
+            BankAccountEvent::Withdrawn{ bank_account_id: _, withdraw, occurred_at } => {
+                aggregate.state().as_ref().unwrap().withdraw(withdraw, occurred_at.clone())
+                    .and_then(|new_state| {
+                        Ok(Self {
+                            state: Some(new_state),
+                            version: aggregate.version(),
+                        })
+                    })
+            },
+            BankAccountEvent::Closed{ bank_account_id: _, occurred_at } => {
+                aggregate.state().as_ref().unwrap().close(occurred_at.clone())
+                    .and_then(|new_state| {
+                        Ok(Self {
+                            state: Some(new_state),
+                            version: aggregate.version(),
+                        })
+                    })
+            },
+        }
     }
 
-    pub fn events(&self) -> &Vec<BankAccountEvent> {
-        &self.events
+    pub fn id(&self) -> &BankAccountId {
+        self.state.as_ref().unwrap().id()
     }
 
-    pub fn clear_events(&mut self) {
-        self.events.clear();
+    pub fn state(&self) -> &Option<BankAccount> {
+        &self.state
     }
 
     pub fn version(&self) -> u64 {
@@ -333,129 +441,12 @@ impl BankAccountAggregate {
         self.version += 1;
     }
 
-    pub fn handle_command(&mut self, command: BankAccountCommand) -> Result<(), BankAccountError> {
-        match command {
-            BankAccountCommand::Open{ bank_account_id, name } => {
-                let event = BankAccountEvent::Opened {
-                    bank_account_id: bank_account_id,
-                    name: name,
-                    occurred_at: Local::now(),
-                };
-                self.events.push(event.clone());
-                self.apply_event(event)
-            },
-            BankAccountCommand::Update{ bank_account_id, name } => {
-                if self.equals_id(&bank_account_id) {
-                    let event = BankAccountEvent::Updated {
-                        bank_account_id: bank_account_id,
-                        name: name,
-                        occurred_at: Local::now(),
-                    };
-                    self.events.push(event.clone());
-                    self.apply_event(event)
-                } else {
-                    Err(BankAccountError::InvalidStateError(bank_account_id))
-                }
-            },
-            BankAccountCommand::Deposit{ bank_account_id, deposit } => {
-                if self.equals_id(&bank_account_id) {
-                    let event = BankAccountEvent::Deposited {
-                        bank_account_id: bank_account_id,
-                        deposit: deposit,
-                        occurred_at: Local::now(),
-                    };
-                    self.events.push(event.clone());
-                    self.apply_event(event)
-                } else {
-                    Err(BankAccountError::InvalidStateError(bank_account_id))
-                }
-            },
-            BankAccountCommand::Withdraw{ bank_account_id, withdraw } => {
-                if self.equals_id(&bank_account_id) {
-                    let event = BankAccountEvent::Withdrawn {
-                        bank_account_id: bank_account_id,
-                        withdraw: withdraw,
-                        occurred_at: Local::now(),
-                    };
-                    self.events.push(event.clone());
-                    self.apply_event(event)
-                } else {
-                    Err(BankAccountError::InvalidStateError(bank_account_id))
-                }
-            },
-            BankAccountCommand::Close{ bank_account_id } => {
-                if self.equals_id(&bank_account_id) {
-                    let event = BankAccountEvent::Closed {
-                        bank_account_id: bank_account_id,
-                        occurred_at: Local::now(),
-                    };
-                    self.events.push(event.clone());
-                    self.apply_event(event)
-                } else {
-                    Err(BankAccountError::InvalidStateError(bank_account_id))
-                }
-            },
-        }
-    }
-
-    pub fn apply_event(&mut self, event: BankAccountEvent) -> Result<(), BankAccountError> {
-        match event {
-            BankAccountEvent::Opened{ bank_account_id, name, occurred_at } => {
-                self.state = Some(BankAccount::new(
-                    bank_account_id.clone(),
-                    name.clone(),
-                    false,
-                    0,
-                    occurred_at.clone(),
-                    occurred_at.clone()
-                    ));
-                Ok(())
-            },
-            BankAccountEvent::Updated{ bank_account_id: _, name, occurred_at } => {
-                self.state.as_ref().unwrap().with_name(name.clone(), occurred_at.clone())
-                    .and_then(|new_state| {
-                        self.state = Some(new_state);
-                        Ok(())
-                    })
-            },
-            BankAccountEvent::Deposited{ bank_account_id: _, deposit, occurred_at } => {
-                self.state.as_ref().unwrap().deposit(deposit, occurred_at.clone())
-                    .and_then(|new_state| {
-                        self.state = Some(new_state);
-                        Ok(())
-                    })
-            },
-            BankAccountEvent::Withdrawn{ bank_account_id: _, withdraw, occurred_at } => {
-                self.state.as_ref().unwrap().withdraw(withdraw, occurred_at.clone())
-                    .and_then(|new_state| {
-                        self.state = Some(new_state);
-                        Ok(())
-                    })
-            },
-            BankAccountEvent::Closed{ bank_account_id: _, occurred_at } => {
-                self.state.as_ref().unwrap().close(occurred_at.clone())
-                    .and_then(|new_state| {
-                        self.state = Some(new_state);
-                        Ok(())
-                    })
-            },
-        }
-    }
-
-    fn equals_id(&self, bank_account_id: &BankAccountId) -> bool {
+    pub fn equals_id(&self, bank_account_id: &BankAccountId) -> bool {
         match &self.state {
             Some(ba) => ba.id() == bank_account_id,
             None => false,
         }
     }
-}
-
-pub trait BankAccountAggregateRepository {
-    type Error;
-
-    fn bank_account_of_id(&self, id: BankAccountId) -> Result<BankAccountAggregate, Self::Error>;
-
-    fn save(&self, aggregate: BankAccountAggregate) -> Result<(), Self::Error>;
 }
 
 #[cfg(test)]
@@ -519,7 +510,7 @@ mod tests {
 
         let bank_account = create_bank_account(true, 0);
         match bank_account.with_name(BankAccountName::new(String::from("bar")).unwrap(), Local::now()) {
-            Err(BankAccountError::AlreadyClosedStateError(_)) => assert!(true),
+            Err(BankAccountError::AlreadyClosed(_)) => assert!(true),
             _ => assert!(false),
         };
     }
@@ -534,19 +525,19 @@ mod tests {
 
         let bank_account = create_bank_account(true, 0);
         match bank_account.deposit(500, Local::now()) {
-            Err(BankAccountError::AlreadyClosedStateError(_)) => assert!(true),
+            Err(BankAccountError::AlreadyClosed(_)) => assert!(true),
             _ => assert!(false),
         };
 
         let bank_account = create_bank_account(false, 0);
         match bank_account.deposit(0, Local::now()) {
-            Err(BankAccountError::DepositZeroError(_, _)) => assert!(true),
+            Err(BankAccountError::DepositZero(_, _)) => assert!(true),
             _ => assert!(false),
         };
 
         let bank_account = create_bank_account(false, 0);
         match bank_account.deposit(-500, Local::now()) {
-            Err(BankAccountError::NegativeBalanceError(_, _)) => assert!(true),
+            Err(BankAccountError::NegativeBalance(_, _)) => assert!(true),
             _ => assert!(false),
         };
     }
@@ -561,19 +552,19 @@ mod tests {
 
         let bank_account = create_bank_account(true, 1000);
         match bank_account.withdraw(500, Local::now()) {
-            Err(BankAccountError::AlreadyClosedStateError(_)) => assert!(true),
+            Err(BankAccountError::AlreadyClosed(_)) => assert!(true),
             _ => assert!(false),
         };
 
         let bank_account = create_bank_account(false, 1000);
         match bank_account.withdraw(0, Local::now()) {
-            Err(BankAccountError::DepositZeroError(_, _)) => assert!(true),
+            Err(BankAccountError::DepositZero(_, _)) => assert!(true),
             _ => assert!(false),
         };
 
         let bank_account = create_bank_account(false, 1000);
         match bank_account.withdraw(1100, Local::now()) {
-            Err(BankAccountError::NegativeBalanceError(_, _)) => assert!(true),
+            Err(BankAccountError::NegativeBalance(_, _)) => assert!(true),
             _ => assert!(false),
         };
     }
@@ -588,20 +579,26 @@ mod tests {
 
         let bank_account = create_bank_account(true, 0);
         match bank_account.close(Local::now()) {
-            Err(BankAccountError::AlreadyClosedStateError(_)) => assert!(true),
+            Err(BankAccountError::AlreadyClosed(_)) => assert!(true),
             _ => assert!(false),
         };
     }
 
     #[test]
     fn test_aggregate_handle_open_bank_account_command() {
-        let mut aggregate = BankAccountAggregate::new();
-        let result = aggregate.handle_command(BankAccountCommand::Open {
+        let aggregate = BankAccountAggregate::new();
+
+        let result = BankAccountAggregate::handle_command(&aggregate, BankAccountCommand::Open {
             bank_account_id: BankAccountId::new(String::from("67e55044-10b1-426f-9247-bb680e5fe0c8")).unwrap(),
             name: BankAccountName::new(String::from("foo")).unwrap(),
         });
-
         assert!(result.is_ok());
+
+        let events = result.unwrap();
+        assert_eq!(events.len(), 1);
+
+        let result = BankAccountAggregate::apply_event(&aggregate, events[0].clone());
+        let aggregate = result.unwrap();
         assert!(aggregate.state.is_some());
 
         let ba = aggregate.state.unwrap();
@@ -614,7 +611,8 @@ mod tests {
     #[test]
     fn test_aggregate_handle_update_bank_account_command() {
         let bank_account_id = BankAccountId::new(String::from("67e55044-10b1-426f-9247-bb680e5fe0c8")).unwrap();
-        let mut aggregate = BankAccountAggregate::load(BankAccount::new(
+
+        let aggregate = BankAccountAggregate::load(BankAccount::new(
                 bank_account_id.clone(),
                 BankAccountName::new(String::from("foo")).unwrap(),
                 false,
@@ -622,12 +620,18 @@ mod tests {
                 Local::now(),
                 Local::now(),
                 ), 1);
-        let result = aggregate.handle_command(BankAccountCommand::Update {
+
+        let result = BankAccountAggregate::handle_command(&aggregate, BankAccountCommand::Update {
             bank_account_id: bank_account_id.clone(),
             name: BankAccountName::new(String::from("bar")).unwrap(),
         });
-
         assert!(result.is_ok());
+
+        let events = result.unwrap();
+        assert_eq!(events.len(), 1);
+
+        let result = BankAccountAggregate::apply_event(&aggregate, events[0].clone());
+        let aggregate = result.unwrap();
         assert!(aggregate.state.is_some());
 
         let ba = aggregate.state.unwrap();
@@ -640,7 +644,8 @@ mod tests {
     #[test]
     fn test_aggregate_handle_deposit_bank_account_command() {
         let bank_account_id = BankAccountId::new(String::from("67e55044-10b1-426f-9247-bb680e5fe0c8")).unwrap();
-        let mut aggregate = BankAccountAggregate::load(BankAccount::new(
+
+        let aggregate = BankAccountAggregate::load(BankAccount::new(
                 bank_account_id.clone(),
                 BankAccountName::new(String::from("foo")).unwrap(),
                 false,
@@ -648,12 +653,18 @@ mod tests {
                 Local::now(),
                 Local::now(),
                 ), 1);
-        let result = aggregate.handle_command(BankAccountCommand::Deposit {
+
+        let result = BankAccountAggregate::handle_command(&aggregate, BankAccountCommand::Deposit {
             bank_account_id: bank_account_id.clone(),
             deposit: 500,
         });
-
         assert!(result.is_ok());
+
+        let events = result.unwrap();
+        assert_eq!(events.len(), 1);
+
+        let result = BankAccountAggregate::apply_event(&aggregate, events[0].clone());
+        let aggregate = result.unwrap();
         assert!(aggregate.state.is_some());
 
         let ba = aggregate.state.unwrap();
@@ -666,7 +677,8 @@ mod tests {
     #[test]
     fn test_aggregate_handle_withdraw_bank_account_command() {
         let bank_account_id = BankAccountId::new(String::from("67e55044-10b1-426f-9247-bb680e5fe0c8")).unwrap();
-        let mut aggregate = BankAccountAggregate::load(BankAccount::new(
+
+        let aggregate = BankAccountAggregate::load(BankAccount::new(
                 bank_account_id.clone(),
                 BankAccountName::new(String::from("foo")).unwrap(),
                 false,
@@ -674,12 +686,18 @@ mod tests {
                 Local::now(),
                 Local::now(),
                 ), 1);
-        let result = aggregate.handle_command(BankAccountCommand::Withdraw {
+
+        let result = BankAccountAggregate::handle_command(&aggregate, BankAccountCommand::Withdraw {
             bank_account_id: bank_account_id.clone(),
             withdraw: 300,
         });
-
         assert!(result.is_ok());
+
+        let events = result.unwrap();
+        assert_eq!(events.len(), 1);
+
+        let result = BankAccountAggregate::apply_event(&aggregate, events[0].clone());
+        let aggregate = result.unwrap();
         assert!(aggregate.state.is_some());
 
         let ba = aggregate.state.unwrap();
@@ -692,7 +710,8 @@ mod tests {
     #[test]
     fn test_aggregate_handle_close_bank_account_command() {
         let bank_account_id = BankAccountId::new(String::from("67e55044-10b1-426f-9247-bb680e5fe0c8")).unwrap();
-        let mut aggregate = BankAccountAggregate::load(BankAccount::new(
+
+        let aggregate = BankAccountAggregate::load(BankAccount::new(
                 bank_account_id.clone(),
                 BankAccountName::new(String::from("foo")).unwrap(),
                 false,
@@ -700,11 +719,17 @@ mod tests {
                 Local::now(),
                 Local::now(),
                 ), 1);
-        let result = aggregate.handle_command(BankAccountCommand::Close {
+
+        let result = BankAccountAggregate::handle_command(&aggregate, BankAccountCommand::Close {
             bank_account_id: bank_account_id.clone(),
         });
-
         assert!(result.is_ok());
+
+        let events = result.unwrap();
+        assert_eq!(events.len(), 1);
+
+        let result = BankAccountAggregate::apply_event(&aggregate, events[0].clone());
+        let aggregate = result.unwrap();
         assert!(aggregate.state.is_some());
 
         let ba = aggregate.state.unwrap();

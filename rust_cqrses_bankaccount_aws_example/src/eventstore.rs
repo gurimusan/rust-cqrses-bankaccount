@@ -1,15 +1,15 @@
 use std::collections::HashMap;
-use chrono::{DateTime, Local};
 use rusoto_core::RusotoError;
 use rusoto_dynamodb::{DynamoDb, DynamoDbClient, AttributeValue, PutItemInput, PutItemError, QueryInput};
 
-use super::super::super::eventstore::{Event, EventStreamId, EventStream, EventStoreError, EventStore};
+use rust_cqrses_bankaccount::eventsourcing::{EventStreamId, EventStream, EventStoreError, EventStore};
+use rust_cqrses_bankaccount::aggregate::BankAccountEvent;
 
-pub struct DynamoDbEventStore {
+pub struct DynamoDbBankAccountEventStore {
     client: DynamoDbClient,
 }
 
-impl DynamoDbEventStore {
+impl DynamoDbBankAccountEventStore {
     pub fn new(client: DynamoDbClient) -> Self {
         Self {
             client: client,
@@ -17,8 +17,11 @@ impl DynamoDbEventStore {
     }
 }
 
-impl EventStore for DynamoDbEventStore {
-    fn save(&self, id: EventStreamId, events: Vec<Event>) -> Result<(), EventStoreError> {
+impl EventStore for DynamoDbBankAccountEventStore {
+    type Event = BankAccountEvent;
+    type EventStream = EventStream<Self::Event>;
+
+    fn save(&self, id: EventStreamId, events: Vec<Self::Event>) -> Result<(), EventStoreError> {
         let mut i: u64 = 0;
         for event in events {
             let mut item: HashMap<String, AttributeValue> = HashMap::new();
@@ -35,11 +38,11 @@ impl EventStore for DynamoDbEventStore {
                 ..Default::default()
             });
             item.insert(String::from("event_body"), AttributeValue {
-                s: Some(event.event_body().to_string()),
+                s: Some(serde_json::to_string(&event).unwrap()),
                 ..Default::default()
             });
             item.insert(String::from("event_occurred_at"), AttributeValue {
-                s: Some(event.event_occurred_at().to_rfc3339()),
+                s: Some(event.occurred_at().to_rfc3339()),
                 ..Default::default()
             });
 
@@ -73,8 +76,7 @@ impl EventStore for DynamoDbEventStore {
         Ok(())
     }
 
-    fn event_stream_since(&self, id: &EventStreamId) -> Result<EventStream, EventStoreError> {
-
+    fn event_stream_since(&self, id: &EventStreamId) -> Result<Self::EventStream, EventStoreError> {
         let key_conditions = vec![
             String::from("stream_id = :stream_id"),
             String::from("stream_version >= :stream_version"),
@@ -104,7 +106,9 @@ impl EventStore for DynamoDbEventStore {
                 }
                 let events = output.items.as_ref().unwrap()
                     .iter()
-                    .map(|attributes| attributes_to_event(attributes))
+                    .map(|attributes| {
+                        serde_json::from_str(&attributes.get("event_body").unwrap().s.as_ref().unwrap()).unwrap()
+                    })
                     .collect();
                 let version = output.items.as_ref().unwrap()
                     .last().unwrap()
@@ -115,14 +119,4 @@ impl EventStore for DynamoDbEventStore {
             Err(err) => Err(EventStoreError::QueryError(err.to_string())),
         }
     }
-}
-
-fn attributes_to_event(attributes: &HashMap<String, AttributeValue>) -> Event {
-    Event::new(
-        attributes.get("event_type").unwrap().s.as_ref().unwrap().clone(),
-        attributes.get("event_body").unwrap().s.as_ref().unwrap().clone(),
-        DateTime::parse_from_rfc3339(
-            attributes.get("event_occurred_at").unwrap().s.as_ref().unwrap().as_ref()
-            ).unwrap().with_timezone(&Local),
-        )
 }
