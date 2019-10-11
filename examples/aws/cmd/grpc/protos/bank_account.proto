@@ -1,0 +1,54 @@
+// See https://developers.google.com/protocol-buffers/docs/proto3
+
+syntax = "proto3";
+
+message OpenBankAccountRequest {
+  string name = 1;
+}
+
+message OpenBankAccountResponse {
+  string bank_account_id = 1;
+}
+
+message UpdateBankAccountRequest {
+  string bank_account_id = 1;
+  string name = 2;
+}
+
+message UpdateBankAccountResponse {
+}
+
+message DepositBankAccountRequest {
+  string bank_account_id = 1;
+  int32 deposit = 2;
+}
+
+message DepositBankAccountResponse {
+}
+
+message WithdrawBankAccountRequest {
+  string bank_account_id = 1;
+  int32 withdraw = 2;
+}
+
+message WithdrawBankAccountResponse {
+}
+
+message CloseBankAccountRequest {
+  string bank_account_id = 1;
+}
+
+message CloseBankAccountResponse {
+}
+
+service BankAccountService {
+  rpc open (OpenBankAccountRequest) returns (OpenBankAccountResponse);
+
+  rpc update (UpdateBankAccountRequest) returns (UpdateBankAccountResponse);
+
+  rpc deposit (DepositBankAccountRequest) returns (DepositBankAccountResponse);
+
+  rpc withdraw (WithdrawBankAccountRequest) returns (WithdrawBankAccountResponse);
+
+  rpc close (CloseBankAccountRequest) returns (CloseBankAccountResponse);
+}

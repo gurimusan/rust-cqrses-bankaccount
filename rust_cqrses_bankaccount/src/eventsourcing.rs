@@ -1,69 +1,6 @@
-use failure::Fail;
+use std::fmt;
+use failure::{Fail, Context, Backtrace};
 use chrono::{DateTime, Local};
-
-#[derive(Debug, Clone)]
-pub struct EventStreamId {
-    stream_name: String,
-    stream_version: u64,
-}
-
-impl EventStreamId {
-    pub fn new(stream_name: String, stream_version: u64) -> Self {
-        Self {
-            stream_name: stream_name,
-            stream_version: stream_version,
-        }
-    }
-
-    pub fn stream_name(&self) -> &str {
-        &self.stream_name
-    }
-
-    pub fn stream_version(&self) -> u64 {
-        self.stream_version
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct StoredEvent {
-    event_type: String,
-    event_body: String,
-    event_occurred_at: DateTime<Local>,
-    stream_name: String,
-    stream_version: u64,
-}
-
-impl StoredEvent {
-    pub fn new(event_type: String, event_body: String, event_occurred_at: DateTime<Local>, stream_name: String, stream_version: u64) -> Self {
-        Self {
-            event_type,
-            event_body,
-            event_occurred_at,
-            stream_name,
-            stream_version,
-        }
-    }
-
-    pub fn event_type(&self) -> &str {
-        &self.event_type
-    }
-
-    pub fn event_body(&self) -> &str {
-        &self.event_body
-    }
-
-    pub fn event_occurred_at(&self) -> &DateTime<Local> {
-        &self.event_occurred_at
-    }
-
-    pub fn stream_name(&self) -> &str {
-        &self.stream_name
-    }
-
-    pub fn stream_version(&self) -> u64 {
-        self.stream_version
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct EventStream<Event> {
@@ -88,16 +25,56 @@ impl<Event> EventStream<Event> {
     }
 }
 
-#[derive(Debug, Fail)]
-pub enum EventStoreError {
+#[derive(Debug, Clone)]
+pub struct Snapshot<Data> {
+    stream_id: String,
+    stream_version: u64,
+    snapshot: Data,
+    created_at: DateTime<Local>,
+}
+
+impl<Data> Snapshot<Data> {
+    pub fn new(stream_id: String, stream_version: u64, snapshot: Data, created_at: DateTime<Local>) -> Self {
+        Self {
+            stream_id,
+            stream_version,
+            snapshot,
+            created_at,
+        }
+    }
+
+    pub fn stream_id(&self) -> &str {
+        &self.stream_id
+    }
+
+    pub fn stream_version(&self) -> u64 {
+        self.stream_version
+    }
+
+    pub fn snapshot(&self) -> &Data {
+        &self.snapshot
+    }
+
+    pub fn created_at(&self) -> &DateTime<Local> {
+        &self.created_at
+    }
+}
+
+#[derive(Debug)]
+pub struct EventStoreError {
+    inner: Context<EventStoreErrorKind>,
+}
+
+#[derive(Clone, Debug, Fail)]
+pub enum EventStoreErrorKind {
     #[fail(display = "No events to append")]
     NoEventsError,
 
     #[fail(display = "Duplicate entry error: {:?}", _0)]
     DuplicateEntryError(String),
 
-    #[fail(display = "Save error: {:?}", _0)]
-    SaveError(String),
+    #[fail(display = "Append event stream error: {:?}", _0)]
+    AppendEventStreamError(String),
 
     #[fail(display = "There is no such event stream: {}:{}", _0, _1)]
     NoEventStreamError(String, u64),
@@ -106,21 +83,60 @@ pub enum EventStoreError {
     QueryError(String),
 }
 
-pub trait EventStore {
+impl Fail for EventStoreError {
+    fn cause(&self) -> Option<&dyn Fail> {
+        self.inner.cause()
+    }
+
+    fn backtrace(&self) -> Option<&Backtrace> {
+        self.inner.backtrace()
+    }
+}
+
+impl fmt::Display for EventStoreError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(&self.inner, f)
+    }
+}
+
+impl EventStoreError {
+    pub fn kind(&self) -> &EventStoreErrorKind {
+        &self.inner.get_context()
+    }
+}
+
+impl From<EventStoreErrorKind> for EventStoreError {
+    fn from(kind: EventStoreErrorKind) -> EventStoreError {
+        EventStoreError { inner: Context::new(kind) }
+    }
+}
+
+impl From<Context<EventStoreErrorKind>> for EventStoreError {
+    fn from(inner: Context<EventStoreErrorKind>) -> EventStoreError {
+        EventStoreError { inner: inner }
+    }
+}
+
+pub trait EventStore: Send + Sync {
     type Event;
     type EventStream;
+    type SnapshotData;
 
-    fn save(&self, id: EventStreamId, events: Vec<Self::Event>) -> Result<(), EventStoreError>;
+    fn append_event_stream(&self, stream_id: String, stream_version: u64, events: Vec<Self::Event>)
+        -> Result<(), EventStoreError>;
 
-    fn event_stream_since(&self, id: &EventStreamId) -> Result<Self::EventStream, EventStoreError>;
+    fn event_stream_since(&self, stream_id: String, stream_version: u64)
+        -> Result<Self::EventStream, EventStoreError>;
+
+    fn record_snapshot(&self, snapshot: Snapshot<Self::SnapshotData>)
+        -> Result<(), EventStoreError>;
+
+    fn read_snapshot(&self, stream_id: String)
+        -> Result<Option<Snapshot<Self::SnapshotData>>, EventStoreError>;
 }
 
-pub trait EventBus<Event> {
-    fn put(&mut self, event: &Event);
+pub trait EventPublisher {
+    type Event;
 
-    fn register(&mut self, subscriber: Box<dyn EventSubscriber<Event>>);
-}
-
-pub trait EventSubscriber<Event> {
-    fn handle(&self, event: &Event);
+    fn publish(&self, event: Self::Event);
 }

@@ -1,11 +1,17 @@
 use std::fmt;
 use chrono::{Local, DateTime};
 use uuid::Uuid;
-use failure::Fail;
+use failure::{Fail, Context, Backtrace};
 use serde::{Serialize, Deserialize};
+use super::eventsourcing::Snapshot;
 
-#[derive(Debug, Fail)]
-pub enum BankAccountError {
+#[derive(Debug)]
+pub struct Error {
+    inner: Context<ErrorKind>,
+}
+
+#[derive(Clone, Debug, Fail)]
+pub enum ErrorKind {
     #[fail(display = "Invalid bank account id: {:?}", _0)]
     InvalidBankAccountId(String),
 
@@ -29,6 +35,40 @@ pub enum BankAccountError {
 
     #[fail(display = "Invalid state: {:?}", _0)]
     InvalidState(BankAccountId),
+}
+
+impl Fail for Error {
+    fn cause(&self) -> Option<&dyn Fail> {
+        self.inner.cause()
+    }
+
+    fn backtrace(&self) -> Option<&Backtrace> {
+        self.inner.backtrace()
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(&self.inner, f)
+    }
+}
+
+impl Error {
+    pub fn kind(&self) -> &ErrorKind {
+        &self.inner.get_context()
+    }
+}
+
+impl From<ErrorKind> for Error {
+    fn from(kind: ErrorKind) -> Error {
+        Error { inner: Context::new(kind) }
+    }
+}
+
+impl From<Context<ErrorKind>> for Error {
+    fn from(inner: Context<ErrorKind>) -> Error {
+        Error { inner: inner }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -110,10 +150,10 @@ pub struct BankAccountId {
 }
 
 impl BankAccountId {
-    pub fn new(value: String) -> Result<Self, BankAccountError> {
+    pub fn new(value: String) -> Result<Self, Error> {
         match Uuid::parse_str(&value) {
             Ok(uuid) => Ok(Self { value: uuid }),
-            Err(_) => Err(BankAccountError::InvalidBankAccountId(value)),
+            Err(_) => Err(ErrorKind::InvalidBankAccountId(value))?,
         }
     }
 
@@ -134,11 +174,11 @@ pub struct BankAccountName {
 }
 
 impl BankAccountName {
-    pub fn new(value: String) -> Result<Self, BankAccountError> {
-        if value.len() < 255 {
+    pub fn new(value: String) -> Result<Self, Error> {
+        if !value.is_empty() && value.len() < 255 {
             Ok(Self { value: value })
         } else {
-            Err(BankAccountError::InvalidBankAccountName(value))
+            Err(ErrorKind::InvalidBankAccountName(value))?
         }
     }
 
@@ -153,7 +193,7 @@ impl fmt::Display for BankAccountName {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BankAccount {
     id: BankAccountId,
     name: BankAccountName,
@@ -206,9 +246,10 @@ impl BankAccount {
         &self.updated_at
     }
 
-    pub fn with_name(&self, name: BankAccountName, occurred_at: DateTime<Local>) -> Result<Self, BankAccountError> {
+    pub fn with_name(&self, name: BankAccountName, occurred_at: DateTime<Local>)
+        -> Result<Self, Error> {
         if self.is_closed {
-            Err(BankAccountError::AlreadyClosed(self.id.clone()))
+            Err(ErrorKind::AlreadyClosed(self.id.clone()))?
         } else {
             Ok(Self {
                 name: name,
@@ -218,13 +259,14 @@ impl BankAccount {
         }
     }
 
-    pub fn deposit(&self, deposit: i32, occurred_at: DateTime<Local>) -> Result<Self, BankAccountError> {
+    pub fn deposit(&self, deposit: i32, occurred_at: DateTime<Local>)
+        -> Result<Self, Error> {
         if self.is_closed {
-            Err(BankAccountError::AlreadyClosed(self.id.clone()))
+            Err(ErrorKind::AlreadyClosed(self.id.clone()))?
         } else if deposit == 0 {
-            Err(BankAccountError::DepositZero(self.id.clone(), deposit))
+            Err(ErrorKind::DepositZero(self.id.clone(), deposit))?
         } else if (self.balance + deposit) < 0 {
-            Err(BankAccountError::NegativeBalance(self.id.clone(), deposit))
+            Err(ErrorKind::NegativeBalance(self.id.clone(), deposit))?
         } else {
             Ok(Self {
                 balance: self.balance + deposit,
@@ -234,13 +276,13 @@ impl BankAccount {
         }
     }
 
-    pub fn withdraw(&self, withdraw: i32, occurred_at: DateTime<Local>) -> Result<Self, BankAccountError> {
+    pub fn withdraw(&self, withdraw: i32, occurred_at: DateTime<Local>) -> Result<Self, Error> {
         if self.is_closed {
-            Err(BankAccountError::AlreadyClosed(self.id.clone()))
+            Err(ErrorKind::AlreadyClosed(self.id.clone()))?
         } else if withdraw == 0 {
-            Err(BankAccountError::DepositZero(self.id.clone(), withdraw))
+            Err(ErrorKind::DepositZero(self.id.clone(), withdraw))?
         } else if (self.balance - withdraw) < 0 {
-            Err(BankAccountError::NegativeBalance(self.id.clone(), withdraw))
+            Err(ErrorKind::NegativeBalance(self.id.clone(), withdraw))?
         } else {
             Ok(Self {
                 balance: self.balance - withdraw,
@@ -250,9 +292,9 @@ impl BankAccount {
         }
     }
 
-    pub fn close(&self, occurred_at: DateTime<Local>) -> Result<Self, BankAccountError> {
+    pub fn close(&self, occurred_at: DateTime<Local>) -> Result<Self, Error> {
         if self.is_closed {
-            Err(BankAccountError::AlreadyClosed(self.id.clone()))
+            Err(ErrorKind::AlreadyClosed(self.id.clone()))?
         } else {
             Ok(Self {
                 is_closed: true,
@@ -277,6 +319,10 @@ impl BankAccountAggregate {
         }
     }
 
+    pub fn stream_id(bank_account_id: &BankAccountId) -> String {
+        format!("bank_account:{}", bank_account_id)
+    }
+
     pub fn load(bank_account: BankAccount, version: u64) -> Self {
         Self {
             state: Some(bank_account),
@@ -284,24 +330,29 @@ impl BankAccountAggregate {
         }
     }
 
-    pub fn load_from_events(events: Vec<BankAccountEvent>, version: u64) -> Result<Self, BankAccountError> {
-        let mut aggregate = Self::new();
-        for event in events {
+    pub fn load_from_snapshot(snapshot: Snapshot<BankAccount>) -> Self {
+        Self::load(snapshot.snapshot().clone(), snapshot.stream_version())
+    }
+
+    pub fn load_from_history(aggregate: &Self, history: Vec<BankAccountEvent>, version: u64)
+        -> Result<Self, Error> {
+        let mut aggregate = aggregate.clone();
+        for event in history {
             aggregate = match BankAccountAggregate::apply_event(&aggregate, event) {
+                Ok(aggregate) => aggregate,
                 Err(e) => return Err(e),
-                Ok(ag) => ag,
             }
         }
         aggregate.set_version(version);
         Ok(aggregate)
     }
 
-
-    pub fn handle_command(aggregate: &Self, command: BankAccountCommand) -> Result<Vec<BankAccountEvent>, BankAccountError> {
+    pub fn handle_command(aggregate: &Self, command: BankAccountCommand)
+        -> Result<Vec<BankAccountEvent>, Error> {
         match command {
             BankAccountCommand::Open{ bank_account_id, name } => {
                 match aggregate.state() {
-                    Some(_) => Err(BankAccountError::AlreadyOpened(bank_account_id)),
+                    Some(_) => Err(ErrorKind::AlreadyOpened(bank_account_id))?,
                     None => {
                         Ok(vec![
                             BankAccountEvent::Opened {
@@ -323,7 +374,7 @@ impl BankAccountAggregate {
                         }
                     ])
                 } else {
-                    Err(BankAccountError::InvalidState(bank_account_id))
+                    Err(ErrorKind::InvalidState(bank_account_id))?
                 }
             },
             BankAccountCommand::Deposit{ bank_account_id, deposit } => {
@@ -336,7 +387,7 @@ impl BankAccountAggregate {
                         }
                     ])
                 } else {
-                    Err(BankAccountError::InvalidState(bank_account_id))
+                    Err(ErrorKind::InvalidState(bank_account_id))?
                 }
             },
             BankAccountCommand::Withdraw{ bank_account_id, withdraw } => {
@@ -349,7 +400,7 @@ impl BankAccountAggregate {
                         }
                     ])
                 } else {
-                    Err(BankAccountError::InvalidState(bank_account_id))
+                    Err(ErrorKind::InvalidState(bank_account_id))?
                 }
             },
             BankAccountCommand::Close{ bank_account_id } => {
@@ -361,26 +412,32 @@ impl BankAccountAggregate {
                         }
                     ])
                 } else {
-                    Err(BankAccountError::InvalidState(bank_account_id))
+                    Err(ErrorKind::InvalidState(bank_account_id))?
                 }
             },
         }
     }
 
-    pub fn apply_event(aggregate: &Self, event: BankAccountEvent) -> Result<Self, BankAccountError> {
+    pub fn apply_event(aggregate: &Self, event: BankAccountEvent)
+        -> Result<Self, Error> {
         match event {
             BankAccountEvent::Opened{ bank_account_id, name, occurred_at } => {
-                Ok(Self {
-                    state: Some(BankAccount::new(
-                        bank_account_id.clone(),
-                        name.clone(),
-                        false,
-                        0,
-                        occurred_at.clone(),
-                        occurred_at.clone(),
-                        )),
-                    version: 0,
-                })
+                match aggregate.state() {
+                    Some(_) => Err(ErrorKind::AlreadyOpened(bank_account_id))?,
+                    None => {
+                        Ok(Self {
+                            state: Some(BankAccount::new(
+                                bank_account_id.clone(),
+                                name.clone(),
+                                false,
+                                0,
+                                occurred_at.clone(),
+                                occurred_at.clone(),
+                                )),
+                            version: 0,
+                        })
+                    },
+                }
             },
             BankAccountEvent::Updated{ bank_account_id: _, name, occurred_at } => {
                 aggregate.state().as_ref().unwrap().with_name(name.clone(), occurred_at.clone())
@@ -456,7 +513,7 @@ mod tests {
     use chrono::Local;
     use uuid::Uuid;
 
-    use super::BankAccountError;
+    use super::ErrorKind;
     use super::BankAccountCommand;
     use super::BankAccountId;
     use super::BankAccountName;
@@ -481,7 +538,10 @@ mod tests {
         assert_eq!(bank_account_id.unwrap().to_string(), "67e55044-10b1-426f-9247-bb680e5fe0c8");
 
         match BankAccountId::new(String::from("!")) {
-            Err(BankAccountError::InvalidBankAccountId(_)) => assert!(true),
+            Err(err) => match err.kind() {
+                ErrorKind::InvalidBankAccountId(_) => assert!(true),
+                _ => assert!(false),
+            },
             _ => assert!(false),
         };
     }
@@ -495,7 +555,10 @@ mod tests {
         let str255 = std::iter::repeat(())
             .map(|()| thread_rng().sample(Alphanumeric)).take(255).collect();
         match BankAccountName::new(str255) {
-            Err(BankAccountError::InvalidBankAccountName(_)) => assert!(true),
+            Err(err) => match err.kind() {
+                ErrorKind::InvalidBankAccountName(_) => assert!(true),
+                _ => assert!(false),
+            },
             _ => assert!(false),
         };
     }
@@ -510,7 +573,10 @@ mod tests {
 
         let bank_account = create_bank_account(true, 0);
         match bank_account.with_name(BankAccountName::new(String::from("bar")).unwrap(), Local::now()) {
-            Err(BankAccountError::AlreadyClosed(_)) => assert!(true),
+            Err(err) => match err.kind() {
+                ErrorKind::AlreadyClosed(_) => assert!(true),
+                _ => assert!(false),
+            },
             _ => assert!(false),
         };
     }
@@ -525,19 +591,28 @@ mod tests {
 
         let bank_account = create_bank_account(true, 0);
         match bank_account.deposit(500, Local::now()) {
-            Err(BankAccountError::AlreadyClosed(_)) => assert!(true),
+            Err(err) => match err.kind() {
+                ErrorKind::AlreadyClosed(_) => assert!(true),
+                _ => assert!(false),
+            },
             _ => assert!(false),
         };
 
         let bank_account = create_bank_account(false, 0);
         match bank_account.deposit(0, Local::now()) {
-            Err(BankAccountError::DepositZero(_, _)) => assert!(true),
+            Err(err) => match err.kind() {
+                ErrorKind::DepositZero(_, _) => assert!(true),
+                _ => assert!(false),
+            },
             _ => assert!(false),
         };
 
         let bank_account = create_bank_account(false, 0);
         match bank_account.deposit(-500, Local::now()) {
-            Err(BankAccountError::NegativeBalance(_, _)) => assert!(true),
+            Err(err) => match err.kind() {
+                ErrorKind::NegativeBalance(_, _) => assert!(true),
+                _ => assert!(false),
+            },
             _ => assert!(false),
         };
     }
@@ -552,19 +627,28 @@ mod tests {
 
         let bank_account = create_bank_account(true, 1000);
         match bank_account.withdraw(500, Local::now()) {
-            Err(BankAccountError::AlreadyClosed(_)) => assert!(true),
+            Err(err) => match err.kind() {
+                ErrorKind::AlreadyClosed(_) => assert!(true),
+                _ => assert!(false),
+            },
             _ => assert!(false),
         };
 
         let bank_account = create_bank_account(false, 1000);
         match bank_account.withdraw(0, Local::now()) {
-            Err(BankAccountError::DepositZero(_, _)) => assert!(true),
+            Err(err) => match err.kind() {
+                ErrorKind::DepositZero(_, _) => assert!(true),
+                _ => assert!(false),
+            },
             _ => assert!(false),
         };
 
         let bank_account = create_bank_account(false, 1000);
         match bank_account.withdraw(1100, Local::now()) {
-            Err(BankAccountError::NegativeBalance(_, _)) => assert!(true),
+            Err(err) => match err.kind() {
+                ErrorKind::NegativeBalance(_, _) => assert!(true),
+                _ => assert!(false),
+            },
             _ => assert!(false),
         };
     }
@@ -579,7 +663,10 @@ mod tests {
 
         let bank_account = create_bank_account(true, 0);
         match bank_account.close(Local::now()) {
-            Err(BankAccountError::AlreadyClosed(_)) => assert!(true),
+            Err(err) => match err.kind() {
+                ErrorKind::AlreadyClosed(_) => assert!(true),
+                _ => assert!(false),
+            },
             _ => assert!(false),
         };
     }

@@ -1,5 +1,5 @@
 [workspace]
 members = [
     "rust_cqrses_bankaccount",
-    "rust_cqrses_bankaccount_aws_example",
+    "examples/aws",
 ]

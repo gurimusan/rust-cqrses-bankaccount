@@ -1,0 +1,19 @@
+{
+  "TableName": "snapshot",
+  "KeySchema": [
+    {
+      "AttributeName": "stream_id",
+      "KeyType": "HASH"
+    }
+  ],
+  "AttributeDefinitions": [
+    {
+      "AttributeName": "stream_id",
+      "AttributeType": "S"
+    }
+  ],
+  "ProvisionedThroughput": {
+    "ReadCapacityUnits": 1,
+    "WriteCapacityUnits": 1
+  }
+}

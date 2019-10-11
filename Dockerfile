@@ -6,6 +6,16 @@ RUN set -eux; \
         pkg-config \
         libssl-dev \
         groff-base \
+        librdkafka-dev \
         awscli \
+        gcc \
+        libc6-dev \
+        make \
+        cmake \
+        g++ \
+        golang-go \
+        libprotobuf-dev \
+        libprotoc-dev \
+        protobuf-compiler \
         ; \
     rm -rf /var/lib/apt/lists/*;
