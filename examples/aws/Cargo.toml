@@ -30,10 +30,6 @@ structopt = "0.3"
 protoc-grpcio = "1.0.2"
 
 [[bin]]
-name = "example"
-path = "cmd/example.rs"
-
-[[bin]]
 name = "grpc_server"
 path = "cmd/grpc/server.rs"
 
