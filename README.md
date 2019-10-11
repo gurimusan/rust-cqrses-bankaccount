@@ -7,11 +7,6 @@ Rust CQRS+ES Example
     $ aws dynamodb create-table --cli-input-json file://./examples/aws/dynamodb/event_store.json --endpoint-url http://db:8000
     $ aws dynamodb create-table --cli-input-json file://./examples/aws/dynamodb/snapshot.json --endpoint-url http://db:8000
 
-    $ RUST_BACKTRACE=1 cargo run --bin rust_cqrses_bankaccount_aws_example -- \
-      --dynamodb-endpoint http://db:8000 \
-      --dynamodb-region ap-northeast-1 \
-      --kafka-broker kafka:9092
-
     $ cargo run --bin snapshot_runner -- \
       --dynamodb-endpoint http://db:8000 \
       --dynamodb-region ap-northeast-1 \
