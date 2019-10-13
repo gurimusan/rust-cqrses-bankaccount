@@ -1,15 +1,11 @@
 mod protos;
 
 use std::sync::Arc;
-use failure;
 use log::{error, info, debug};
 use futures::Future;
 use chan::chan_select;
 use chan_signal::{kill_this, Signal};
 use structopt::StructOpt;
-
-use rusoto_core::Region;
-use rusoto_dynamodb::DynamoDbClient;
 
 use grpcio::{
     RpcContext,
@@ -37,24 +33,26 @@ use protos::bank_account_grpc::{BankAccountService, create_bank_account_service}
 
 use rust_cqrses_bankaccount::aggregate::{BankAccountId, BankAccountName};
 use rust_cqrses_bankaccount::usecase::command::BankAccountAggregateUseCase;
-use rust_cqrses_bankaccount_aws_example::eventstore::DynamoDbBankAccountEventStore;
-use rust_cqrses_bankaccount_aws_example::eventpublisher::KafkaBankAccountEventPublisher;
+
+use rust_cqrses_bankaccount_mysql_example::Config;
+use rust_cqrses_bankaccount_mysql_example::db;
+use rust_cqrses_bankaccount_mysql_example::eventstore::MysqlBankAccountEventStore;
+use rust_cqrses_bankaccount_mysql_example::eventpublisher::KafkaBankAccountEventPublisher;
 
 fn main() {
+    dotenv::dotenv().ok();
+
     env_logger::init();
 
-    let config = Config::from_args();
+    let config = envy::from_env::<Config>().unwrap();
 
-    let region = Region::Custom {
-        name: config.dynamodb_region.clone(),
-        endpoint: config.dynamodb_endpoint.clone(),
-    };
+    let args = Args::from_args();
 
-    let client = DynamoDbClient::new(region);
+    let pool = db::init_database_pool(&config.database_url);
 
     let eventpublisher = KafkaBankAccountEventPublisher::new(config.kafka_brokers.clone());
 
-    let eventstore = Box::new(DynamoDbBankAccountEventStore::new(client, eventpublisher));
+    let eventstore = Box::new(MysqlBankAccountEventStore::new(pool, eventpublisher));
 
     let usecase = Arc::new(BankAccountAggregateUseCase::new(eventstore));
 
@@ -62,7 +60,7 @@ fn main() {
 
     let mut sv = ServerBuilder::new(env)
         .register_service(create_bank_account_service(Server::new(usecase)))
-        .bind(config.host, config.port)
+        .bind(args.host, args.port)
         .build()
         .expect("fail build server");
     sv.start();
@@ -85,21 +83,12 @@ fn main() {
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "grpc_server")]
-pub struct Config {
-    #[structopt(long)]
+pub struct Args {
+    #[structopt(long, default_value="127.0.0.1")]
     pub host: String,
 
-    #[structopt(long)]
+    #[structopt(long, default_value="8080")]
     pub port: u16,
-
-    #[structopt(long)]
-    pub dynamodb_endpoint: String,
-
-    #[structopt(long)]
-    pub dynamodb_region: String,
-
-    #[structopt(long, required = true)]
-    pub kafka_brokers: Vec<String>,
 }
 
 #[derive(Clone)]

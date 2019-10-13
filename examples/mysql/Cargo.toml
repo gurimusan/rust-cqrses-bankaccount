@@ -1,5 +1,5 @@
 [package]
-name = "rust_cqrses_bankaccount_aws_example"
+name = "rust_cqrses_bankaccount_mysql_example"
 version = "0.1.0"
 authors = ["gurimusan <gurimusan@gmail.com>"]
 edition = "2018"
@@ -8,23 +8,26 @@ build = "build.rs"
 [dependencies]
 log = "0.4"
 failure = "0.1"
+dotenv = "0.14.1"
+envy = "0.4"
 env_logger = "0.7.0"
 getopts = "0.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "0.7", features = ["serde", "v4"] }
-rusoto_core = "0.40.0"
-rusoto_dynamodb = "0.40.0"
 diesel = { version = "1.4", features = ["mysql", "r2d2", "uuidv07", "chrono"] }
 kafka = "0.8"
 grpcio = { version = "0.4.4", features = ["openssl"] }
+r2d2 = "0.8"
 rust_cqrses_bankaccount = { path = "../../rust_cqrses_bankaccount" }
 futures = "0.1"
 protobuf = "~2"
 chan = "0.1"
 chan-signal = "0.3"
 structopt = "0.3"
+elastic = "~0.21.0-pre.5"
+elastic_derive = "~0.21.0-pre.5"
 
 [build-dependencies]
 protoc-grpcio = "1.0.2"

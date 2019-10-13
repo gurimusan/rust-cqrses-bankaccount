@@ -19,15 +19,17 @@ use protos::bank_account::{
 use protos::bank_account_grpc::BankAccountServiceClient;
 
 fn main() {
+    dotenv::dotenv().ok();
+
     env_logger::init();
 
-    let config = Config::from_args();
+    let args = Args::from_args();
 
     let env = Arc::new(EnvBuilder::new().build());
-    let ch = ChannelBuilder::new(env).connect(&format!("{}:{}", config.host, config.port));
+    let ch = ChannelBuilder::new(env).connect(&format!("{}:{}", args.host, args.port));
     let client = BankAccountServiceClient::new(ch);
 
-    match config.cmd {
+    match args.cmd {
         Command::Open{ name } => open_bank_account(&client, name),
         Command::Update{ bank_account_id, name } => update_bank_account(&client, bank_account_id, name),
         Command::Deposit{ bank_account_id, deposit } => deposit_bank_account(&client, bank_account_id, deposit),
@@ -38,11 +40,11 @@ fn main() {
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "grpc_client")]
-pub struct Config {
-    #[structopt(long)]
+pub struct Args {
+    #[structopt(long, default_value="127.0.0.1")]
     pub host: String,
 
-    #[structopt(long)]
+    #[structopt(long, default_value="8080")]
     pub port: u16,
 
     #[structopt(subcommand)]
@@ -75,10 +77,11 @@ fn open_bank_account(client: &BankAccountServiceClient, name: String) {
     let mut req = OpenBankAccountRequest::default();
     req.set_name(name);
 
+    info!("Send request: {:?}", &req);
+
     let reply = client.open(&req).expect("rpc");
 
-    info!("OpenBankAccount received: {:?}", reply);
-    println!("Open bank account: bank_account_id = {}", reply.get_bank_account_id());
+    info!("Response received: {:?}", &reply);
 }
 
 fn update_bank_account(client: &BankAccountServiceClient, bank_account_id: String, name: String) {
@@ -86,9 +89,11 @@ fn update_bank_account(client: &BankAccountServiceClient, bank_account_id: Strin
     req.set_bank_account_id(bank_account_id);
     req.set_name(name);
 
+    info!("Send request: {:?}", &req);
+
     let reply = client.update(&req).expect("rpc");
 
-    info!("UpdateBankAccount received: {:?}", reply);
+    info!("Response received: {:?}", &reply);
 }
 
 fn deposit_bank_account(client: &BankAccountServiceClient, bank_account_id: String, deposit: i32) {
@@ -96,9 +101,11 @@ fn deposit_bank_account(client: &BankAccountServiceClient, bank_account_id: Stri
     req.set_bank_account_id(bank_account_id);
     req.set_deposit(deposit);
 
+    info!("Send request: {:?}", &req);
+
     let reply = client.deposit(&req).expect("rpc");
 
-    info!("DepositBankAccount received: {:?}", reply);
+    info!("Response received: {:?}", &reply);
 }
 
 fn withdraw_bank_account(client: &BankAccountServiceClient, bank_account_id: String, withdraw: i32) {
@@ -106,16 +113,20 @@ fn withdraw_bank_account(client: &BankAccountServiceClient, bank_account_id: Str
     req.set_bank_account_id(bank_account_id);
     req.set_withdraw(withdraw);
 
+    info!("Send request: {:?}", &req);
+
     let reply = client.withdraw(&req).expect("rpc");
 
-    info!("WithdrawBankAccount received: {:?}", reply);
+    info!("Response received: {:?}", &reply);
 }
 
 fn close_bank_account(client: &BankAccountServiceClient, bank_account_id: String) {
     let mut req = CloseBankAccountRequest::default();
     req.set_bank_account_id(bank_account_id);
 
+    info!("Send request: {:?}", &req);
+
     let reply = client.close(&req).expect("rpc");
 
-    info!("CloseBankAccount received: {:?}", reply);
+    info!("Response received: {:?}", &reply);
 }

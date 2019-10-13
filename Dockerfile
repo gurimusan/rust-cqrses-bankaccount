@@ -17,5 +17,10 @@ RUN set -eux; \
         libprotobuf-dev \
         libprotoc-dev \
         protobuf-compiler \
+        default-libmysqlclient-dev \
+        libmariadbclient-dev \
         ; \
     rm -rf /var/lib/apt/lists/*;
+
+RUN set -eux; \
+    cargo install diesel_cli --no-default-features --features mysql
