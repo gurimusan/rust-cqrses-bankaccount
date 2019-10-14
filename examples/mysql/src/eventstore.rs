@@ -1,11 +1,17 @@
-use std::collections::HashMap;
-use chrono::{Local, DateTime, NaiveDateTime, TimeZone};
+use chrono::{Local, NaiveDateTime, TimeZone};
 
-use rust_cqrses_bankaccount::eventsourcing::{EventStream, Snapshot, EventStoreError, EventStoreErrorKind, EventStore, EventPublisher};
+use rust_cqrses_bankaccount::eventsourcing::{
+    EventStream,
+    Snapshot,
+    EventStoreError,
+    EventStoreErrorKind,
+    EventStore,
+    EventPublisher,
+};
 use rust_cqrses_bankaccount::aggregate::{BankAccountEvent, BankAccount};
 
 use diesel::prelude::*;
-use super::schema::{event_stores as event_stores_schema, snapshots as snapshots_schema};
+use super::schema::{tbl_event_store, tbl_snapshot};
 use super::db::{Conn, Pool};
 use super::eventpublisher::KafkaBankAccountEventPublisher;
 
@@ -52,7 +58,7 @@ impl EventStore for MysqlBankAccountEventStore {
                     event_occurred_at: event.occurred_at().naive_local(),
                 };
 
-                diesel::insert_into(event_stores_schema::table)
+                diesel::insert_into(tbl_event_store::table)
                     .values(&new_event)
                     .execute(&conn)?;
 
@@ -75,10 +81,10 @@ impl EventStore for MysqlBankAccountEventStore {
         -> Result<Self::EventStream, EventStoreError> {
         let conn = self.get_conn().unwrap();
 
-        event_stores_schema::table
-            .filter(event_stores_schema::stream_id.eq(stream_id.clone()))
-            .filter(event_stores_schema::stream_version.ge(stream_version))
-            .order(event_stores_schema::stream_version.asc())
+        tbl_event_store::table
+            .filter(tbl_event_store::stream_id.eq(stream_id.clone()))
+            .filter(tbl_event_store::stream_version.ge(stream_version))
+            .order(tbl_event_store::stream_version.asc())
             .load::<EventRecord>(&conn)
             .map_err(|err| EventStoreError::from(EventStoreErrorKind::QueryError(err.to_string())))
             .and_then(|event_records| {
@@ -106,7 +112,7 @@ impl EventStore for MysqlBankAccountEventStore {
                 created_at: snapshot.created_at().naive_local(),
             };
 
-            diesel::replace_into(snapshots_schema::table)
+            diesel::replace_into(tbl_snapshot::table)
                 .values(&new_snapshot)
                 .execute(&conn)?;
 
@@ -120,8 +126,8 @@ impl EventStore for MysqlBankAccountEventStore {
         -> Result<Option<Snapshot<Self::SnapshotData>>, EventStoreError> {
         let conn = self.get_conn().unwrap();
 
-        snapshots_schema::table
-            .filter(snapshots_schema::stream_id.eq(stream_id.clone()))
+        tbl_snapshot::table
+            .filter(tbl_snapshot::stream_id.eq(stream_id.clone()))
             .first::<SnapshotRecord>(&conn)
             .optional()
             .map_err(|err| EventStoreError::from(EventStoreErrorKind::QueryError(err.to_string())))
@@ -142,7 +148,7 @@ impl EventStore for MysqlBankAccountEventStore {
 }
 
 #[derive(Insertable)]
-#[table_name = "event_stores_schema"]
+#[table_name = "tbl_event_store"]
 struct NewEventRecord<'a> {
     event_type: &'a str,
     event_body: &'a str,
@@ -162,7 +168,7 @@ struct EventRecord {
 }
 
 #[derive(Insertable)]
-#[table_name = "snapshots_schema"]
+#[table_name = "tbl_snapshot"]
 struct NewSnapshotRecord<'a> {
     stream_id: &'a str,
     stream_version: u64,

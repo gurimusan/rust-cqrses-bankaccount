@@ -34,15 +34,15 @@ struct Args {
 fn consume_messages(args: Args, config: Config) {
     let pool = db::init_database_pool(&config.database_url);
 
-    let eventpublisher = KafkaBankAccountEventPublisher::new(config.kafka_brokers.clone());
+    let eventpublisher = KafkaBankAccountEventPublisher::new(config.kafka_brokers.clone(), String::from(constants::TOPIC));
 
     let eventstore = Box::new(MysqlBankAccountEventStore::new(pool, eventpublisher));
 
     let snapshotter = BankAccountAggregateSnapshotter::new(eventstore);
 
-    let mut con = {
+    let mut consumer = {
         let cb = Consumer::from_hosts(config.kafka_brokers.clone())
-                .with_group(config.kafka_consume_group.clone())
+                .with_group(config.snapshotter_kafka_consume_group.clone())
                 .with_topic(String::from(constants::TOPIC))
                 .with_fallback_offset(FetchOffset::Earliest)
                 .with_offset_storage(GroupOffsetStorage::Kafka);
@@ -50,7 +50,7 @@ fn consume_messages(args: Args, config: Config) {
     };
 
     loop {
-        let mss = match con.poll() {
+        let mss = match consumer.poll() {
             Ok(mss) => mss,
             Err(err) => {
                 error!("Error occrred: {:?}", err);
@@ -102,10 +102,10 @@ fn consume_messages(args: Args, config: Config) {
             if error_occrred {
                 break;
             }
-            let _ = con.consume_messageset(ms);
+            let _ = consumer.consume_messageset(ms);
         }
         if !args.dryrun {
-            con.commit_consumed().unwrap();
+            consumer.commit_consumed().unwrap();
         }
     }
 }

@@ -4,40 +4,64 @@ Rust CQRS+ES Example
     $ docker-compose up
     $ docker exec -it rust-cqrses-bankaccount_app_1 sh
 
-Mysql
+Setup
 -----
 
-    $ diesel setup
+### Create Kafka topic
 
-    $ kafka-topics.sh --zookeeper zoo:2181 --create --replication-factor 1 --partitions 1 --topic bank_account
+    $ docker exec -it rust-cqrses-bankaccount_kafka_1 sh -c "kafka-topics.sh --zookeeper zoo:2181 --create --replication-factor 1 --partitions 1 --topic bank_account"
 
-    $ cargo run --bin snapshot_runner
+### Create Mysql table
 
-    $ cargo run --bin grpc_server -- \
-      --host 127.0.0.1 \
-      --port 8000
+    $ docker exec -it rust-cqrses-bankaccount_app_1 sh -c "cd examples/mysql && diesel migration run"
 
-    $ cargo run --bin grpc_client -- \
-      --host 127.0.0.1 \
-      --port 8000 \
-      open foo
+### Cargo init
 
-    $ RUST_BACKTRACE=1 cargo run --bin grpc_client -- \
-      --host 127.0.0.1 \
-      --port 8000 \
-      close "055c48a7-2277-420e-8470-fcbd3d14b83f"
+    $ docker exec -it rust-cqrses-bankaccount_app_1 sh -c "cargo build"
 
-    $ RUST_BACKTRACE=1 cargo run --bin grpc_client -- \
-      --host 127.0.0.1 \
-      --port 8000 \
-      update "055c48a7-2277-420e-8470-fcbd3d14b83f" "foo updated"
+Run
+---
 
-    $ RUST_BACKTRACE=1 cargo run --bin grpc_client -- \
-      --host 127.0.0.1 \
-      --port 8000 \
-      deposit "055c48a7-2277-420e-8470-fcbd3d14b83f" 1000
+    $ docker exec -it rust-cqrses-bankaccount_app_1 sh -c "cargo run --bin snapshot_runner"
 
-    $ RUST_BACKTRACE=1 cargo run --bin grpc_client -- \
-      --host 127.0.0.1 \
-      --port 8000 \
-      withdraw "055c48a7-2277-420e-8470-fcbd3d14b83f" 300
+    $ docker exec -it rust-cqrses-bankaccount_app_1 sh -c "cargo run --bin projector_runner"
+
+    $ docker exec -it rust-cqrses-bankaccount_app_1 sh -c "cargo run --bin grpc_server -- --host 127.0.0.1 --port 8000"
+
+
+Command example
+---------------
+
+Open:
+
+    $ docker exec -it rust-cqrses-bankaccount_app_1 sh -c "cargo run --bin grpc_client -- --host 127.0.0.1 --port 8000 open foo"
+
+Update:
+
+    $ docker exec -it rust-cqrses-bankaccount_app_1 sh -c "cargo run --bin grpc_client -- --host 127.0.0.1 --port 8000 update <bank-account-id> 'foo updated'"
+
+Deposit:
+
+    $ docker exec -it rust-cqrses-bankaccount_app_1 sh -c "cargo run --bin grpc_client -- --host 127.0.0.1 --port 8000 deposit <bank-account-id> 1000"
+
+Withdraw:
+
+    $ docker exec -it rust-cqrses-bankaccount_app_1 sh -c "cargo run --bin grpc_client -- --host 127.0.0.1 --port 8000 withdraw <bank-account-id> 300"
+
+Close:
+
+    $ docker exec -it rust-cqrses-bankaccount_app_1 sh -c "cargo run --bin grpc_client -- --host 127.0.0.1 --port 8000 close <bank-account-id>"
+
+TIPS
+----
+
+An error like the following occurred:
+
+    elasticsearch_1  | ERROR: [2] bootstrap checks failed
+    elasticsearch_1  | [1]: max virtual memory areas vm.max_map_count [65530] is too low, increase to at least [262144]
+    elasticsearch_1  | [2]: the default discovery settings are unsuitable for production use; at least one of [discovery.seed_hosts, discovery.seed_providers, cluster.initial_master_nodes] must be configured
+
+Change system parameter:
+
+    $ echo "vm.max_map_count = 262144" >> /etc/sysctl.d/99-sysctl.conf
+    $ sysctl --system

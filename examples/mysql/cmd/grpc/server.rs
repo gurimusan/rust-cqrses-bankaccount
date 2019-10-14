@@ -35,6 +35,7 @@ use rust_cqrses_bankaccount::aggregate::{BankAccountId, BankAccountName};
 use rust_cqrses_bankaccount::usecase::command::BankAccountAggregateUseCase;
 
 use rust_cqrses_bankaccount_mysql_example::Config;
+use rust_cqrses_bankaccount_mysql_example::constants;
 use rust_cqrses_bankaccount_mysql_example::db;
 use rust_cqrses_bankaccount_mysql_example::eventstore::MysqlBankAccountEventStore;
 use rust_cqrses_bankaccount_mysql_example::eventpublisher::KafkaBankAccountEventPublisher;
@@ -50,7 +51,7 @@ fn main() {
 
     let pool = db::init_database_pool(&config.database_url);
 
-    let eventpublisher = KafkaBankAccountEventPublisher::new(config.kafka_brokers.clone());
+    let eventpublisher = KafkaBankAccountEventPublisher::new(config.kafka_brokers.clone(), String::from(constants::TOPIC));
 
     let eventstore = Box::new(MysqlBankAccountEventStore::new(pool, eventpublisher));
 

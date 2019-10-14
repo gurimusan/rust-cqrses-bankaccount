@@ -1,7 +1,7 @@
 use chrono::{Local, DateTime};
 
-pub struct BankAccountRecord {
-    pub id: String,
+pub struct BankAccountRM {
+    pub bank_account_id: String,
     pub name: String,
     pub is_closed: bool,
     pub balance: i32,
@@ -11,9 +11,9 @@ pub struct BankAccountRecord {
 }
 
 pub trait BankAccountDao {
-    fn find(&self, id: String) -> Option<BankAccountRecord>;
+    fn find(&self, bank_account_id: String) -> Option<BankAccountRM>;
 
-    fn insert(&self, record: BankAccountRecord);
+    fn insert(&self, model: BankAccountRM);
 
-    fn update(&self, record: BankAccountRecord);
+    fn update(&self, model: BankAccountRM);
 }

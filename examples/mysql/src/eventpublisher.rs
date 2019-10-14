@@ -4,16 +4,16 @@ use rust_cqrses_bankaccount::aggregate::BankAccountEvent;
 
 use kafka::producer::{Producer, Record, RequiredAcks};
 
-use super::constants;
-
 pub struct KafkaBankAccountEventPublisher {
     hosts: Vec<String>,
+    topic: String,
 }
 
 impl KafkaBankAccountEventPublisher {
-    pub fn new(hosts: Vec<String>) -> Self{
+    pub fn new(hosts: Vec<String>, topic: String) -> Self{
         Self {
             hosts: hosts,
+            topic: topic,
         }
     }
 }
@@ -29,7 +29,7 @@ impl EventPublisher for KafkaBankAccountEventPublisher {
                  .unwrap();
 
         producer.send(&Record {
-            topic: constants::TOPIC,
+            topic: &self.topic,
             partition: -1,
             key: (),
             value: serde_json::to_string(&event).unwrap(),

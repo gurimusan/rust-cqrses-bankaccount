@@ -43,3 +43,7 @@ path = "cmd/grpc/client.rs"
 [[bin]]
 name = "snapshot_runner"
 path = "cmd/snapshot_runner.rs"
+
+[[bin]]
+name = "projector_runner"
+path = "cmd/projector_runner.rs"

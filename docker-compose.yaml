@@ -3,7 +3,7 @@ services:
   zoo:
     image: bitnami/zookeeper:3
     ports:
-      - '2181:2181'
+      - 2181:2181
     environment:
       - ALLOW_ANONYMOUS_LOGIN=yes
 
@@ -29,8 +29,17 @@ services:
       mysqld
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_unicode_ci
+      --general-log=true
+      --general-log-file=/var/log/mysql/query.log
     tty: true
     restart: always
+
+  es:
+    image: elasticsearch:7.4.0
+    ports:
+      - 9200:9200
+    environment:
+      - discovery.type=single-node
 
   app:
     build: .
@@ -43,3 +52,4 @@ services:
     links:
       - kafka
       - event_store
+      - es

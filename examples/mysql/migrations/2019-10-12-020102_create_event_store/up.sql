@@ -1,5 +1,5 @@
 -- Your SQL goes here
-CREATE TABLE IF NOT EXISTS event_stores (
+CREATE TABLE IF NOT EXISTS tbl_event_store (
     `event_id` bigint(20) UNSIGNED NOT NULL auto_increment,
     `event_body` TEXT NOT NULL,
     `event_type` varchar(250) NOT NULL,
@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS event_stores (
     PRIMARY KEY (`event_id`)
 );
 
-CREATE TABLE IF NOT EXISTS snapshots (
+CREATE TABLE IF NOT EXISTS tbl_snapshot (
     `stream_id` varchar(250) NOT NULL,
     `stream_version` bigint(20) UNSIGNED NOT NULL,
     `data` TEXT NOT NULL,

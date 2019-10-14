@@ -1,5 +1,5 @@
 table! {
-    event_stores (event_id) {
+    tbl_event_store (event_id) {
         event_id -> Unsigned<Bigint>,
         event_body -> Text,
         event_type -> Varchar,
@@ -10,7 +10,7 @@ table! {
 }
 
 table! {
-    snapshots (stream_id) {
+    tbl_snapshot (stream_id) {
         stream_id -> Varchar,
         stream_version -> Unsigned<Bigint>,
         data -> Text,
@@ -19,6 +19,6 @@ table! {
 }
 
 allow_tables_to_appear_in_same_query!(
-    event_stores,
-    snapshots,
+    tbl_event_store,
+    tbl_snapshot,
 );
