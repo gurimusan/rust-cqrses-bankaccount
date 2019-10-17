@@ -1,13 +1,13 @@
 use chrono::{Local, DateTime};
-use super::dao::{BankAccountRM, BankAccountDao};
+use super::dao::{BankAccountRM, BankAccountRMDao};
 use super::aggregate::{BankAccountEvent, BankAccountId, BankAccountName};
 
 pub struct BankAccountProjector {
-    dao: Box<dyn BankAccountDao>,
+    dao: Box<dyn BankAccountRMDao>,
 }
 
 impl BankAccountProjector {
-    pub fn new(dao: Box<dyn BankAccountDao>) -> Self {
+    pub fn new(dao: Box<dyn BankAccountRMDao>) -> Self {
         Self { dao }
     }
 

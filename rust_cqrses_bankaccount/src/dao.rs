@@ -10,7 +10,7 @@ pub struct BankAccountRM {
     pub version: u64,
 }
 
-pub trait BankAccountDao {
+pub trait BankAccountRMDao: Send + Sync {
     fn find(&self, bank_account_id: String) -> Option<BankAccountRM>;
 
     fn insert(&self, model: BankAccountRM);

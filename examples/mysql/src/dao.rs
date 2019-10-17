@@ -5,13 +5,13 @@ use elastic::prelude::*;
 
 use serde::{Serialize, Deserialize};
 
-use rust_cqrses_bankaccount::dao::{BankAccountRM, BankAccountDao};
+use rust_cqrses_bankaccount::dao::{BankAccountRM, BankAccountRMDao};
 
-pub struct ElasticBankAccountDao {
+pub struct ElasticBankAccountRMDao {
     client: SyncClient,
 }
 
-impl ElasticBankAccountDao {
+impl ElasticBankAccountRMDao {
     pub fn new(client: SyncClient) -> Self {
         Self {
             client,
@@ -19,7 +19,7 @@ impl ElasticBankAccountDao {
     }
 }
 
-impl BankAccountDao for ElasticBankAccountDao {
+impl BankAccountRMDao for ElasticBankAccountRMDao {
     fn find(&self, bank_account_id: String) -> Option<BankAccountRM> {
         let response = self.client.document::<BankAccountRecord>().get(bank_account_id).send().unwrap();
         match response.into_document() {
