@@ -1,11 +1,22 @@
 Rust CQRS+ES Example
 =============================
 
-    $ docker-compose up
-    $ docker exec -it rust-cqrses-bankaccount_app_1 sh
+Futures
+-------
 
-Setup
------
+- Implement Rust
+- Eventsourcing
+- Command Query Responsibility Segregation
+- EventStore using Mysql
+- Event broker useing Kafka
+- Query side data store using Elasticsearch
+
+Run
+---
+
+### Run docker container:
+
+    $ docker-compose up
 
 ### Create Kafka topic
 
@@ -19,15 +30,17 @@ Setup
 
     $ docker exec -it rust-cqrses-bankaccount_app_1 sh -c "cargo build"
 
-Run
----
+### Run snapshotter
 
     $ docker exec -it rust-cqrses-bankaccount_app_1 sh -c "cargo run --bin snapshot_runner"
 
+### Run projector
+
     $ docker exec -it rust-cqrses-bankaccount_app_1 sh -c "cargo run --bin projector_runner"
 
-    $ docker exec -it rust-cqrses-bankaccount_app_1 sh -c "cargo run --bin grpc_server -- --host 127.0.0.1 --port 8000"
+### Run gRPC Server
 
+    $ docker exec -it rust-cqrses-bankaccount_app_1 sh -c "cargo run --bin grpc_server -- --host 127.0.0.1 --port 8000"
 
 Command example
 ---------------
